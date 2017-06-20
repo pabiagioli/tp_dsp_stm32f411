@@ -25,23 +25,29 @@ uint32_t freqsDurationMs [NUMBER_OF_FREQS_TO_LOOK] = {
 			750
 	};
 
+/// Algorithm from The Audio Programming Book by Victor Lazzarini
+/// Chapter 8, page 150
 void simple_lp_filter(float32_t  *input, float32_t *output, int32_t fftSize) {
 	int i, k;
+	//My Notes: magK will be used to force a greater low pass, but will break any further calculations
+	uint16_t magK = 1;
 	float32_t mag, magin, phi;
 	// The low-pass contour is 1 at 0 Hz
 	// and 0 at the Nyquist
 	output[0] = 1.f;
 	output[1] = 0.f;
 	for(i = 2, k = 0; i < fftSize; i+=2, k++) {
-		// get the magnitudes of input
-		magin = sqrtf(input[i] * input[i] + input[i+1] * input[i+1]);
-		// apply the spectral contour
-		mag = cosf(PI * k / fftSize) * magin;
-		//get the phases
-		phi = atan2f(input[i+1], input[i]);
-		// convert to rectangular form
-		output[i] = mag * cosf(phi);
-		output[i+1] = mag * sinf(phi);
+		if(i != 20 && i != 26 && i != 30){
+			// get the magnitudes of input
+			magin = sqrtf(input[i] * input[i] + input[i+1] * input[i+1]);
+			// apply the spectral contour
+			mag = cosf(PI * k / fftSize) * magin / magK;
+			//get the phases
+			phi = atan2f(input[i+1], input[i]);
+			// convert to rectangular form
+			output[i] = mag * cosf(phi);
+			output[i+1] = mag * sinf(phi);
+		}
 	}
 
 }
@@ -73,9 +79,16 @@ void freq_detector(uint16_t* audiobuff, uint32_t bufflength, uint32_t samplerate
 	arm_max_f32(floatBuffer, fftSize, &maxValue, &fftIndex);
 	//printf("freqLengthCounter %u \n", freqLengthCounter);
 
+	simple_lp_filter(floatBuffer, floatBuffer, fftSize);
+
+
 	for(i = 0; i< NUMBER_OF_FREQS_TO_LOOK ; i++){
 		if(fftIndex == getBinFromSampleRate(i, fftSize, samplerate) || (i == 1 && fftIndex == getBinFromSampleRate(i, fftSize, samplerate) + 1)){
 			BSP_LED_On(i);
 		}
 	}
+
+	//Reverse FFT to get back to the original output format (maybe filtered)
+	arm_rfft_fast_f32(&fftRealFastFloatInstance, floatBuffer, floatBuffer, 1);
+	arm_float_to_q15(floatBuffer, (q15_t *)audiobuff, fftSize);
 }
